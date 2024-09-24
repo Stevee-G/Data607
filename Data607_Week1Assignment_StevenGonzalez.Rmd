@@ -1,0 +1,61 @@
+---
+title: "Data 607 Assignment 1"
+author: "Steven Gonzalez"
+date: "9/8/2024"
+output: html_document
+---
+
+## Overview / Introduction
+The article, "[We Watched 906 Foul Balls To Find Out Where The Most Dangerous Ones Land](https://fivethirtyeight.com/features/we-watched-906-foul-balls-to-find-out-where-the-most-dangerous-ones-land/)," was written by Annette Choi and explores the stats behind MLB foul balls with regards to their speed and trajectory. Choi used data from [Baseball Savant](https://baseballsavant.mlb.com/statcast_search?hfPT=&hfAB=&hfBBT=&hfPR=foul%7C&hfZ=&stadium=&hfBBL=&hfNewZones=&hfGT=R%7C&hfC=&hfSea=2019%7C&hfSit=&player_type=pitcher&hfOuts=&opponent=&pitcher_throws=&batter_stands=&hfSA=&game_date_gt=&game_date_lt=2019-06-05&hfInfield=&team=&position=&hfOutfield=&hfRO=&home_road=&hfFlag=&hfPull=&metric_1=&hfInn=&min_pitches=0&min_results=0&group_by=venue&sort_col=pitches&player_event_sort=h_launch_speed&sort_order=desc&min_pas=0#results) and pulled the 10 stadiums with the highest foul counts from the start of the 2019 season up until June 5th. After zoning out specific segments of the stadium, as illustrated below, the data showed that the majority of high speed foul balls landed in zones 4 and 5, which are zones where the protective netting usually ends. Choi then concludes by mentioning how the MLB has been slowly adding more netting around the stadium with players actively advocating for the safety of the fans.
+```{r zoning diagram}
+knitr::include_graphics('https://fivethirtyeight.com/wp-content/uploads/2019/07/choi-foul-0625-4-2.png?resize=1536,1398')
+```
+Image 1: Choi MLB Stadium Zoning Diagram (Choi, 2019)
+
+### Load Packages and Data
+Let's start this short analysis by first loading the tidyverse and dplyr packages and importing the 'foul-balls' data set into our environment.
+```{r load packages and data from csv url}
+library(tidyverse)
+library(dplyr)
+foul_balls <- read.csv('https://raw.githubusercontent.com/fivethirtyeight/data/refs/heads/master/foul-balls/foul-balls.csv')
+glimpse(foul_balls)
+```
+### Prepare Subset
+Upon glimpsing the original data set, we can see there are many rows missing foul ball exit velocities. We also see that the 'used_zone' column was the one used for the analysis. Therefore, let us create a subset removing the rows with no exit velocity and removing columns 'predicted_zone' and 'camera_zone' which were only needed to determine the 'used_zone'.
+```{r create subset}
+foul_balls_trimmed <- subset(foul_balls,exit_velocity != '', select = c(1:4,7))
+glimpse(foul_balls_trimmed)
+```
+### Rename and Add Columns
+Let us also rename the 'used_zone' column to 'landing_zone' to better understand what it is referring to and add a column categorizing exit velocities above or below 90 mph named 'danger' and a column indicating the home team named 'home_team'.
+```{r rename zone and add danger and home team columns}
+foul_balls_trimmed <- foul_balls_trimmed %>%
+  rename(landing_zone = used_zone) %>%
+  mutate(danger = ifelse(exit_velocity >= 90, '>= 90 mph','< 90 mph')) %>%
+  mutate(home_team = sub(" vs.*","",matchup,ignore.case = TRUE))
+glimpse(foul_balls_trimmed)
+```
+### Most Dangerous Foul Balls
+The original authors of the data set charted the landing zones for the foul balls with the highest, or most dangerous, speeds with a bar chart similar to the one below. The difference being that we removed the observations that lacked exit velocity beforehand.
+```{r danger bar chart}
+ggplot(data = foul_balls_trimmed, aes(y = landing_zone, fill = danger)) +
+  geom_bar()
+```
+
+### Stadiums Where Most Dangerous Foul Balls Occurred
+Another interesting stat one could look into would be the stadiums with the most foul balls over 90 mph out of these 10. Let's go ahead and summarize this.
+```{r summarise by danger and home team}
+foul_balls_trimmed %>%
+  filter(danger == '>= 90 mph') %>%
+  group_by(home_team) %>%
+  summarize(
+    mean = mean(exit_velocity),
+    n = n()
+  ) %>%
+  arrange(-n)
+```
+## Conclusions / Findings and Recommendations
+The summary above displays the stadiums where the most amount of these dangerous foul balls occurred. Since each stadium is not designed exactly the same, maybe their structure can be further analyzed to see if they play a role on how many foul balls reach the stands. The findings made by Annette Choi were interesting and definitely revealing of the dangers posed by foul balls. Being that this article was written in 2019, it would be good to follow up and see if more stadiums have implemented the necessary safety measures to address this issue and if the amount of injuries produced by these foul balls has decreased in the long run.
+
+### Works Cited
+Choi, A. (2019, July 15). We Watched 906 Foul Balls To Find Out Where The Most Dangerous Ones Land. FiveThirtyEight. https://fivethirtyeight.com/features/we-watched-906-foul-balls-to-find-out-where-the-most-dangerous-ones-land/
