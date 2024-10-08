@@ -1,0 +1,137 @@
+---
+title: "Data 607 Project 1"
+author: "Steven Gonzalez"
+date: "10/6/2024"
+output: html_document
+---
+
+## Overview / Introduction
+For this project, we are given a particularly structured [text file](https://raw.githubusercontent.com/Stevee-G/Data607/refs/heads/main/Project1Table) with chess tournament results. Our goal is to create an R Markdown file that generates a .CSV file with the following information for all of the players:
+
+Player’s Name, Player’s State, Total Number of Points, Player’s Pre-Rating, and Average Opponent Pre-Rating
+
+### Load Packages and Data
+Let's begin by first loading the necessary packages and reading the text file into a manageable data frame. Looking at the text file, one can see that each row is separated by "|" which makes this symbol perfect to be used as the delimiter in our *read.delim()* function.
+```{r load packages and data from url}
+library(tidyverse)
+library(dplyr)
+url = "https://raw.githubusercontent.com/Stevee-G/Data607/refs/heads/main/Project1Table"
+raw <- read.delim(file=url,header=FALSE,sep="|")
+glimpse(raw)
+```
+### Remove Junk Rows and Blank Columns
+We will now remove any unusable data or blank rows. The "raw" data frame seems to have interpreted the "---" values as observations with their own rows. Thankfully, this makes these rows easy to remove through a simple *filter()* command. The blank column at the end can then be removed by deselecting it.
+```{r filter out useless rows and blank column}
+adjusted <- raw %>%
+  filter(!grepl("---",V1)) %>%
+  select(-V11)
+glimpse(adjusted)
+```
+### Divide Data Frame and Prepare Subsets
+Further observation of the "adjusted" data frame reveals a pattern within its contents. The values in the rows alternate between two sets of data. With regards to the fields we want for our final deliverable, the odd numbered rows seem to have the player name, their total points, and the opponent number for each round. The even numbered rows give us the player state and player rankings.
+
+Seeing this, we can then split the "adjusted" data frame into two subsets of data with their respective contents. Later on, after making the necessary changes and calculations, when creating our final data frame, we can merge them back together. knowing this, it would be wise to make use of the shared total number of rows each subset has and create an index column for joining.
+```{r create rounds subset}
+rounds <- adjusted[seq_len(nrow(adjusted)) %% 2 == 1,]
+glimpse(rounds)
+colnames(rounds) <- c("player_number","player_name","total_points",
+                      "round1","round2","round3","round4",
+                      "round5","round6","round7")
+rounds <- rounds[-1,]
+rounds$index <- 1:nrow(rounds)
+glimpse(rounds)
+```
+### Create Long Rounds Data Frame
+The "rounds" data frame would be more useful to us if we had all of the rounds and their respective opponent numbers in two columns. This won't affect the index for joining in any way since the index column and its values were already declared before this step.
+```{r lengthen rounds subset}
+tidy_rounds <- rounds %>%
+  pivot_longer(cols=starts_with("round"), 
+               names_to="round",
+               values_to="opponent_number")
+tidy_rounds$opponent_number <- as.numeric(
+  gsub("\\D","",tidy_rounds$opponent_number))
+tidy_rounds$round <- as.numeric(
+  gsub("\\D","",tidy_rounds$round))
+glimpse(tidy_rounds)
+```
+### Create Ratings Data Frame
+Next, we will create the "ratings" data frame which, as its name suggests, will hold the ratings data for each player, along with their state data.
+```{r create ratings subset}
+ratings <- adjusted[seq_len(nrow(adjusted)) %% 2 == 0,] %>%
+  select(V1,V2)
+glimpse(ratings)
+colnames(ratings) <- c("player_state","player_prerating")
+ratings <- ratings[-1,]
+ratings$index <- 1:nrow(ratings)
+glimpse(ratings)
+```
+### Tidy Player Ratings Column
+Here, we will strip the player pre-ratings column values down to just the pre-ratings since the final deliverable does not require USCF ID or post-ratings data.
+```{r tidy ratings column}
+tidy_ratings <- ratings
+tidy_ratings$player_prerating <- substr(
+  tidy_ratings$player_prerating,16,19)
+glimpse(tidy_ratings)
+```
+### Create Player Rating Index
+Afterwards, we create a new data frame that combines "tidy_ratings" with "rounds" in order to tie player number and name to their pre-rating.
+```{r create rating index}
+prerating_index <- left_join(tidy_ratings,rounds,by="index") %>%
+  select(player_number,player_name,player_prerating)
+glimpse(prerating_index)
+```
+### Create Average Opponent Ratings Column
+We will now use "tidy_rounds" and "prerating_index" in order to tie opponent number to their pre-rating data. Once this is done, we pivot the data frame wider and prepare the rows to be used towards our calculation of the opponent pre-rating average using only the columns referring to rounds.
+```{r create opponent average rating}
+prerating_index$player_number <- as.numeric(
+  as.character(prerating_index$player_number))
+prerating_index$player_prerating <- as.numeric(
+  as.character(prerating_index$player_prerating))
+prerating_avg <- left_join(tidy_rounds,prerating_index,
+                       c("opponent_number"="player_number")) %>%
+  select(player_number,round,opponent_number,player_prerating)
+prerating_avg <- prerating_avg %>%
+  pivot_wider(id_cols="player_number",
+              names_from="round",
+              values_from="player_prerating")
+prerating_avg$opp_avg_prerating <- rowMeans(
+  prerating_avg[c("1","2","3","4","5","6","7")],na.rm=TRUE)
+prerating_avg$opp_avg_prerating <-
+  format(round(prerating_avg$opp_avg_prerating,0),nsmall=0)
+glimpse(prerating_avg)
+```
+### Merge Subsets
+Finally, we have all of the fields we are looking for! All we have to do now is merge the necessary data frames, pulling in only the fields related to our deliverable.
+```{r create deliverable data frame}
+tidy <- left_join(rounds,tidy_ratings,by="index") %>%
+  select(player_number,player_name,player_state,total_points,player_prerating)
+glimpse(tidy)
+tidier <- left_join(tidy,prerating_avg,by="player_number") %>%
+  select(player_name,player_state,total_points,player_prerating,opp_avg_prerating)
+glimpse(tidier)
+```
+### Finalize Data Frame
+Glimpsing "tidier," we can see a bunch of white space surrounding our values and some columns with the incorrect data type. We quickly remedy this using the *str_trim()* and *as.numeric()* functions, respectively, to create our "tidiest" final product.
+```{r tidy data frame}
+tidiest <- tidier
+tidiest$player_name <- str_trim(tidiest$player_name,side="both")
+tidiest$player_state <- str_trim(tidiest$player_state,side="both")
+tidiest$total_points <- str_trim(tidiest$total_points,side="both") %>%
+  as.numeric(as.character(tidiest$total_points))
+tidiest$player_prerating <- as.numeric(as.character(tidiest$player_prerating))
+tidiest$opp_avg_prerating <- as.numeric(as.character(tidiest$opp_avg_prerating))
+glimpse(tidiest)
+```
+### Create CSV File
+We finish off by writing our "tidiest" data frame unto a .CSV file that ends up in our default or recently used R folder.
+```{r create csv file}
+write_csv(tidiest, "chess_data.csv")
+```
+## Conclusions / Findings and Recommendations
+Suffice to say, tidying up a text file, especially one formatted the way this chess tournament results one was, is quite the mission. Either way, with the right resources and plenty of patience, it can be done. For fun, here's a plot illustrating player pre-rating versus average opponent pre-rating.
+```{r player_preratinig vs opp_avg_prerating}
+ggplot(data=tidiest,aes(x=player_prerating,y=opp_avg_prerating,
+                        color=player_prerating>opp_avg_prerating)) +
+  geom_point() +
+  theme(legend.position="top")
+```
