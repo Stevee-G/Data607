@@ -1,0 +1,72 @@
+---
+title: "Data 607 Assignment 2"
+author: "Steven Gonzalez"
+date: "9/15/2024"
+output: html_document
+---
+
+## Overview / Introduction
+For this assignment, we were tasked with choosing six recent popular movies and asking at least five people that we know to rate each of these movies that they have seen on a scale of 1 to 5. We then had to take the results and store them in the class MySQL database to later transfer over to and load into an R data frame.
+
+### Approach
+Seeing as how the majority of people I know aren't avid movie watchers, I decided to take a different approach to collecting the data. Using the popular movie ratings site, [IMDb](https://www.imdb.com/?ref_=nv_home), I went ahead and searched up the most popular movies from the years 2023 and 2024 and arbitrarily chose six of them for the analysis. IMDb has a peculiar set up in that, in addition to looking into ratings info for movies, you can also look into the ratings activity of individual users. I decided to use this to my advantage and accumulate my ratings data from specific users and not just any random ratings.
+
+Instead of inputting the ratings data directly into a spreadsheet, I decided to simulate rater input by designing a [Google form](https://forms.gle/wCUVXHRpLggyb2qE8) and entering a submission for every rater with their respective movie ratings. The form submission data was then collected in this [Google sheet](https://docs.google.com/spreadsheets/d/1BEx_nGZSERbTrN-O5u1unDp1aIB0SxsaxKm0E5vAVYQ/edit?usp=sharing). I entered a total of seven submissions since I wanted to have at least five ratings for each movie.
+
+After obtaining the required data, I downloaded a csv extract of the Google sheet and imported it into my MySQL database. Upon loading, I noticed that some of the observations were missing from the table. Further inspection showed that the import wizard had difficulty interpreting the blanks within the data. In order to circumvent the issue, I manually inputted 'null' into the blank spaces. This was feasible for such a small data set but a much larger set would have definitely required a different approach. Either way, this fixed the issue and the file was able to be completely imported to the database. The remainder of this file describes the data loading and manipulation process on RStudio.
+
+### Load Packages
+Let's start off by loading the necessary packages.
+```{r load, message = FALSE}
+library(tidyverse)
+library(dplyr)
+library(digest)
+library(RMariaDB)
+library(DBI)
+```
+
+### Define Log In Information
+Let's then create variables containing the information necessary to sign into the MySQL database. These variables will be called upon later to establish a connection and load the desired table into our RStudio environment.
+```{r credentials}
+hash_hex <- digest('23246087', algo = "sha256", serialize = FALSE)
+quarter_hash <- substr(hash_hex, 1, nchar(hash_hex) %/% 4)
+user <- 'steven.gonzalez87'
+host <- 'cunydata607sql.mysql.database.azure.com'
+port <- 3306
+```
+
+### Establish Connection
+Using the `dbConnect()` function, along with the previously defined variables, we can now establish a connection between RStudio and our MySQL database.
+```{r connect}
+connection <- dbConnect(
+  drv = MariaDB(),
+  dbname = user,
+  user = user,
+  password = quarter_hash,
+  host = host,
+  port = port
+)
+```
+
+### Load Table and Disconnect from Database
+Now that we're connected, we can easily load our desired table into a local data frame and disconnect from the database once done. A glimpse of the `movie_ratings` data frame can be seen below.
+```{r load table, disconnect}
+movie_ratings <- tbl(connection,'imdb_movie_ratings') %>% 
+  collect()
+dbDisconnect(connection)
+glimpse(movie_ratings)
+```
+
+### Tidy Data and Transform Ratings
+Tidying up the data frame can render it more useful for data analysis. We also have to transform the ratings from a scale of 1-10 to a scale of 1-5 since that was the scale initially requested of us. A glimpse of the `tidy_movie_ratings` data frame can be seen below.
+```{r tidy and transform}
+tidy_movie_ratings <- movie_ratings %>%
+  pivot_longer(cols=c(3:8), 
+               names_to="Movie",
+               values_to="Rating") %>% 
+  mutate(Rating = round(Rating/2,0))
+glimpse(tidy_movie_ratings)
+```
+
+## Conclusions / Findings and Recommendations
+There were definitely many approaches that could have been taken for this assignment. Interestingly enough, it would have been easier to directly connect the Google sheet to RStudio rather than using MySQL as a medium between the two. Sadly, MySQL doesn't seem to have an inbuilt feature for importing from Google sheet and required third party software to do so. All in all, the collection, distribution, and transformation of the data was a success.
