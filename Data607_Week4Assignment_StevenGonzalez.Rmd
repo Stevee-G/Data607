@@ -1,0 +1,86 @@
+---
+title: "Data 607 Assignment 4"
+author: "Steven Gonzalez"
+date: "9/29/2024"
+output: html_document
+---
+
+## Overview / Introduction
+For this assignment, we've been given an image of an untidy data set (shown below). Our task is to create a .CSV file that includes all of the information provided in the chart, read the information from the .CSV file into R, and use tidyr and dplyr to tidy and transform the data. Finally, we'll perform simple analysis on the arrival delays for the two airlines.
+
+```{r image, echo=FALSE, out.width="75%",out.height="75%",fig.align='center'}
+knitr::include_graphics("~/CUNYSPS_Fall2024/Data 607/Screenshot 2024-10-24 002934.png")
+```
+
+### Load Packages
+As always, let's start off by loading the necessary packages. Just the `tidyverse`, `dplyr`, and `scales` packages will be needed for this one.
+```{r load, message = FALSE}
+library(tidyverse)
+library(dplyr)
+library(scales)
+```
+
+### Load Data
+Now let's load the data from a .CSV I created and stored on [GitHub](https://github.com/Stevee-G/Data607/blob/main/flight_delays.csv).
+```{r load video game data}
+url <- url('https://raw.githubusercontent.com/Stevee-G/Data607/refs/heads/main/flight_delays.csv')
+flight_delays <- read.csv(url)
+
+flight_delays
+```
+
+### Remove Empty Row
+As we can see, the table contains an empty row that needs to be removed. Let's go ahead and do that using the `complete.cases()` function.
+```{r normalize video game data}
+flight_delays <- flight_delays[complete.cases(flight_delays),]
+
+flight_delays
+```
+
+### Rename Columns and Pivot Table
+Next, let's address the two unnamed columns and call them `carrier` and `status`, respectively. Afterwards, we will go ahead and pivot the data longer in order to transform the destination headers into one column alongside their count and trip status.
+```{r }
+flight_delays <- flight_delays %>% 
+  rename(carrier = X, status = X.1)
+
+flight_delays <- flight_delays %>% 
+  pivot_longer(cols = c(3:7),
+               names_to = 'destination',
+               values_to = 'count')
+
+flight_delays
+```
+
+### Fill Carriers and Adjust Destinations
+Now we will fill in the remaining cells in the `carrier` field, but in order to do so we first need to insert values that can be recognized and replaced by the `fill()` function. Let us also replace the periods (.) that are contained within some of the values in the `destination` field. Once done, we will have our table, clean and tidy for analysis.
+```{r tidy and transform}
+flight_delays$carrier[flight_delays$carrier == ""] <- NA
+flight_delays <- flight_delays %>% 
+  fill(carrier)
+
+flight_delays$destination <- str_replace(flight_delays$destination, "\\.", " ")
+
+flight_delays
+```
+
+### Summarize and Plot Data
+As mentioned before, we will perform a simple analysis comparing the arrival delays for the two airlines. Let's go ahead and create tibble grouping and summarizing our data by `carrier` and `status`. We will also create a plot to go right alongside it. As we can see, although the total flights for each airline differs by quite a bit, their proportions for 'on time' and 'delayed' flights are actually very similar.
+```{r message = FALSE}
+flight_delays_summary <- flight_delays %>%
+  group_by(carrier,status) %>%
+  summarise(
+    'total' = sum(count)
+  ) %>% 
+  mutate(percentage=percent((total/sum(total)),accuracy=0.1)) %>% 
+  arrange(carrier,desc(status))
+
+flight_delays_summary
+
+ggplot(flight_delays_summary,aes(x=carrier,y=total,fill=status)) +
+  geom_col() +
+  geom_text(aes(label = paste(total,"(",percentage,")"),vjust=-0.75)) +
+  scale_fill_discrete(breaks=c('on time','delayed'))
+```
+
+## Conclusions / Findings and Recommendations
+This assignment was great practice for cleaning and tidying really messy data. It was definitely helpful planning and visualizing the changes I wanted to make before actually making them. When taking time to think about the approach, one knows when it is best to clean, restructure, transform, and finally tidy the data. Thankfully, we had the option of recreating the chart rather than trying to pull it from the image, which could have proven much more challenging. Either way, much was learned throughout the assignment.
