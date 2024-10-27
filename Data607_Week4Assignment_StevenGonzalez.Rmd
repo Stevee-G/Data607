@@ -77,10 +77,32 @@ flight_delays_summary <- flight_delays %>%
 flight_delays_summary
 
 ggplot(flight_delays_summary,aes(x=carrier,y=total,fill=status)) +
-  geom_col() +
-  geom_text(aes(label = paste(total,"(",percentage,")"),vjust=-0.75)) +
+  geom_col(position = 'dodge') +
+  geom_text(aes(label = paste(total,"(",percentage,")"),vjust=1.25),
+            position = position_dodge(width = 0.9)) +
   scale_fill_discrete(breaks=c('on time','delayed'))
 ```
 
+Since the overall proportions are so similar for both carriers, I decided to compare delays per carrier for each destination. Interestingly enough, when separated by `destination`, 'AM WEST' seems to have higher rates of delays than 'ALASKA' for every one.
+```{r message = FALSE}
+destination_delays_summary <- flight_delays %>%
+  group_by(destination,carrier,status) %>%
+  summarise(
+    'total' = sum(count),
+  ) %>% 
+  mutate(percentage=percent((total/sum(total)),accuracy=0.1)) %>% 
+  arrange(destination,carrier,status) %>% 
+  filter(status=="delayed")
+
+destination_delays_summary
+
+ggplot(destination_delays_summary,aes(x=destination,y=total,fill=carrier)) +
+  geom_col(position = 'dodge') +
+  geom_text(aes(label = paste(total,"(",percentage,")\n",carrier),
+                hjust=0),position = position_dodge(width=.9)) +
+  coord_flip() + ylim(0,500) +
+  scale_fill_discrete(breaks=c('ALASKA','AM WEST'))
+```
+
 ## Conclusions / Findings and Recommendations
-This assignment was great practice for cleaning and tidying really messy data. It was definitely helpful planning and visualizing the changes I wanted to make before actually making them. When taking time to think about the approach, one knows when it is best to clean, restructure, transform, and finally tidy the data. Thankfully, we had the option of recreating the chart rather than trying to pull it from the image, which could have proven much more challenging. Either way, much was learned throughout the assignment.
+Given the above results, if one were to choose between the two airlines, I would recommend 'ALASKA.' When analyzed on the surface, it seemed as the 'AM WEST' was outperforming 'ALASKA.' However, once accounted for destination, it was clear that 'AM WEST' actually had a higher proportion of delays. Although it may seem odd that 'AM WEST' could be ahead in overall performance yet behind in each individual destination, the numbers show this to be exactly the case. This assignment was great practice for cleaning and tidying really messy data. It was definitely helpful planning and visualizing the changes I wanted to make before actually making them. When taking time to think about the approach, one knows when it is best to clean, restructure, transform, and finally tidy the data. Thankfully, we had the option of recreating the chart rather than trying to pull it from the image, which could have proven much more challenging. Either way, much was learned throughout the assignment.
