@@ -1,0 +1,115 @@
+---
+title: "Data 607 Assignment 7"
+author: "Steven Gonzalez"
+date: "10/20/2024"
+output: html_document
+---
+
+## Overview / Introduction
+For this assignment, we have received data from a fictional store named "CUNYMart" and have been tasked with preparing the data for analysis by formatting it in JSON, HTML, XML, and Parquet. Additionally, we must provide the pros and cons of each format.
+
+### Load Packages
+As always, let's start off by loading the necessary packages.
+```{r load, message = FALSE}
+library(tidyverse)
+library(dplyr)
+library(jsonlite)
+library(kableExtra)
+library(xml2)
+library(arrow)
+```
+
+### Import Data
+Now let's load the data from a .CSV file that's been created and stored on [GitHub](https://github.com/Stevee-G/Data607/blob/main/CUNYMart_data.csv).
+```{r import CUNYMart data, message = FALSE, warning = FALSE}
+url <- url('https://raw.githubusercontent.com/Stevee-G/Data607/refs/heads/main/CUNYMart_data.csv')
+data <- read_csv(url)
+glimpse(data)
+```
+
+### JSON
+First, we will format the data into JSON using the `toJSON()` function from the `jsonlite` package. Right off the bat we can see that JSON is stored differently from a .CSV data frame, which makes sense since the JSON file type is tailored towards online or the webpage experience. Below are some apparent [pros and cons of JSON](https://www.techquintal.com/advantages-and-disadvantages-of-json/).
+
+Pros:
+1. Easy to learn and simple to read and understand.
+2. Text-only format, making it easy to send across servers.
+3. Faster and easier to parse than XML.
+
+Cons:
+1. Not suitable for complex data structures.
+2. Not as useful for aggregate queries compared to other formats like XML
+```{r convert to JSON, warning = FALSE}
+json_data <- toJSON(data, pretty = TRUE)
+json_data
+```
+
+### HTML
+Next, we format the data into HTML using the `kable()` function from the `kableExtra` package. Being that this is HTML, we can also manipulate the aesthetics of the table using the `kable_styling()` function to produce the table seen below. Afterwards, we write the table into a file called "data.html". Below are some apparent [pros and cons of HTML](https://appdevelopmentcompanies.co/web-design/pros-and-cons-of-html-css-for-data-analysis).
+
+Pros:
+1. Lightweight, quick, and flexible
+2. Each browser supports HTML
+3. Easy to learn
+
+Cons:
+1. Limited for displaying content
+2. Can be lengthy in code
+3. Has a complex structure
+```{r convert to HTML, warning = FALSE}
+html_data <- kable(data, format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+write(html_data, file = "data.html")
+html_data
+```
+
+### XML
+Now, we format the data into XML through conjunction of the `xml_new_root()` and the `xml_add_child()` functions. Where `xml_new_root()` establishes an XML table and we use a for loop to fill that table with our CUNYMart data. This is all being provided through the `xml2` package. Once that's done, we go ahead and write the XML data into an XML file. Although the end process is similar to HTML, actually creating the table is much more meticulous. Below are some apparent [pros and cons of XML](https://sonra.io/csv-vs-json-vs-xml/).
+
+Pros:
+1. Provides a consistent format for data exchange
+2. supports hierarchical, data structures
+3. Great for data validation
+
+Cons:
+1. Files are big and wordy, compared to JSON and CSV
+2. Large file size
+3. Can have slower transmission and processing times
+```{r convert to XML, warning = FALSE}
+xml_data <- xml_new_root("root")
+for (i in 1:nrow(data)) {
+  row_node <- xml_add_child(xml_data,"row")
+  for (col in names(data)) {
+    xml_add_child(row_node,col,data[i,col])
+  }
+}
+write_xml(xml_data, "data.xml")
+xml_data
+```
+
+### Parquet
+Lastly, we format the data into Parquet using the `write_parquet()` function from the `arrow` package. Similar to JSON, this is a two line transformation. However, the product is a completely understandable table. It seems the only major difference between this file and a CSV is the space saved but must later be parsed. Below are some apparent [pros and cons of Parquet](https://medium.com/@agusmahari/parquet-file-format-with-other-file-formats-pros-and-cons-471b00bd6c0a).
+
+Pros:
+1. Efficient compression
+2. Fast query performance
+3. Compatible with many big data tools
+
+Cons
+1. Higher CPU usage
+2. Slower write performance
+```{r convert to Parquet, warning = FALSE}
+parquet_data <- write_parquet(data, "data.parquet")
+read_parquet("data.parquet")
+```
+
+## Conclusions / Findings and Recommendations
+Each file format has its own set of pros and cons. CSV and Parquet seem to be the most familiar with regards to data structure and storage but Parquet can take a bit of computing power to unpack. JSON is probably the next in simplicity with regards to importing the data. Finally, HTML and XML prove to be the least conventional and can even take up a bit of storage space. All in all, getting familiar with each format is definitely beneficial in the field of data.
+
+### Works Cited
+Agusmahari. (2023, April 10). Parquet File Format with Other File Formats: Pros and Cons. Medium. https://medium.com/@agusmahari/parquet-file-format-with-other-file-formats-pros-and-cons-471b00bd6c0a
+
+Colton, E. (2024). Pros and Cons of HTML & CSS for Data Analysis? Appdevelopmentcompanies.co. https://appdevelopmentcompanies.co/web-design/pros-and-cons-of-html-css-for-data-analysis
+
+Maciek. (2024, September 25). CSV vs JSON vs XML - The Best Comparison Guide 2024. Sonra. https://sonra.io/csv-vs-json-vs-xml/
+
+Sahana. (2022, January 5). 9 Advantages and Disadvantages of JSON to Pay Heed to. Tech Quintal. https://www.techquintal.com/advantages-and-disadvantages-of-json/
