@@ -1,0 +1,169 @@
+---
+title: "Data 607 Project 2"
+author: "Steven Gonzalez"
+date: "10/13/2024"
+output: html_document
+---
+
+## Overview / Introduction
+For this assignment we've been given the task of choosing any three of the “wide” data sets identified in the Week 6 Discussion items by our classmates. For each of the three chosen data sets we will create a .CSV file or MySQL database, read the information from our files into R using tidyr and dplyr as needed to tidy and transform our data, and perform the analysis requested in the discussion item.
+
+The [first data set](https://data.ny.gov/Transportation/MTA-Daily-Ridership-Data-Beginning-2020/vxuj-8kew/data_preview) is from DATA.NY.GOV and it records the daily ridership numbers for the MTA since 2020 compared to pre-pandemic levels. The suggested analysis revolved around how ridership has fluctuated throughout the years following the pandemic and which means of transport have been affected more than others. The [second data set](https://github.com/Stevee-G/Data607/blob/main/world_population.csv) contains world population data spanning several decades providing population counts for various countries from 1970 through 2022. The suggested analyses revolve around population growth across continents and the correlation between a country’s area and its population density over time. The [third data set](https://data.cityofnewyork.us/Health/HIV-AIDS-Diagnoses-by-Neighborhood-Sex-and-Race-Et/ykvb-493p/about_data) records HIV/AIDS diagnosis data in NYC and the suggested analyses revolve around diagnosis rates by gender and race, changes in diagnoses over the years across neighborhoods, and a comparison between new HIV and HIV/AIDS diagnoses.
+
+## Load Packages and First Data Set
+Let's start by loading the necessary packages and the first data set.
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(zoo)
+library(RSocrata)
+
+url1 = "https://data.ny.gov/api/odata/v4/vxuj-8kew"
+ridership <- read.socrata(url1)
+glimpse(ridership)
+```
+
+## Tidy First Data Set
+Seeing as how the suggested analysis was with regards to ridership fluctuation throughout the years and its affects on different means of transportation, our data set should then be tidied to better compare ridership between the different modes of transportation with regards to their initial pre pandemic levels. For this reason, we create a subset pulling the date field along with the columns comparing each respective mode of transportation with their pre pandemic levels. We then rename each column in order to pivot and create a long table containing a field for means of transportation and a field for ridership proportion compared to pre pandemic levels.
+```{r message=FALSE, warning=FALSE}
+comparable_ridership <- subset(ridership, select = c(1, 3, 5, 7, 9, 11, 13, 15)) %>% 
+  rename(subway = subways_of_comparable_pre_pandemic_day,
+         buses = buses_of_comparable_pre_pandemic_day,
+         lirr = lirr_of_comparable_pre_pandemic_day,
+         "metro north" = metro_north_of_comparable_pre_pandemic_day,
+         "access a ride" = access_a_ride_of_comparable_pre_pandemic_day,
+         "bridges and tunnels" = bridges_and_tunnels_of_comparable_pre_pandemic_day,
+         "staten island railway" = staten_island_railway_of_comparable_pre_pandemic_day) %>% 
+  pivot_longer(cols = c(2:8),
+               names_to = "means_of_transportation",
+               values_to = "prop_compared_to_pre_pandemic")
+glimpse(comparable_ridership)
+```
+
+## Analyze First Data Set
+Once the long table has been created, we go ahead and group the data by `means_of_transportation` and calculate the mean `prop_compared_to_pre_pandemic` for each one in order to get a glimpse of which ones have been most affected by the pandemic and have yet to return to pre pandemic levels. We then create a box plot to get a better understanding of these averages and their respective distributions. Given these visuals, it seems like bridges and tunnels have had greater success in returning to pre pandemic levels while the staten island railway continues to struggle.
+```{r message=FALSE, warning=FALSE}
+comparable_ridership %>%
+  group_by(means_of_transportation) %>%
+  summarise(
+    "avg_prop_compared_to_pre_pandemic" = mean(prop_compared_to_pre_pandemic)
+  ) %>% 
+  arrange(means_of_transportation)
+
+ggplot(data = comparable_ridership, aes(x = means_of_transportation,
+                                        y = prop_compared_to_pre_pandemic,
+                                        color = means_of_transportation)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Load Second Data Set
+Now, we move on to the second data set.
+```{r message=FALSE, warning=FALSE}
+url2 = "https://raw.githubusercontent.com/Stevee-G/Data607/refs/heads/main/world_population.csv"
+world_population <- read.csv(url2)
+glimpse(world_population)
+```
+
+## Tidy Second Data Set
+The suggested analysis for this data set revolves around population growth across continents and the correlation between a country’s area and its population density over time. All that the first analysis needs is a view of population growth through the decades for each continent. The second analysis is a little trickier, however. The initial discussion post asked for an analysis taking a country's area (a numerical variable), a country's population density (another numerical variable), and time (a numerical or categorical variable depending on context) into account. In order to simplify the analysis, we go ahead and create a variable for the change in density, that way we only have to take that variable and country area into consideration.
+
+For the first subset, we go ahead and select the columns we need, rename the columns that refer to decades, and pivot everything into a long table where `year` and `population` are their own columns. We then group the subset by `Continent` and `year`, sum the populations, and ensure `year` is a numerical variable for plotting purposes. For the second subset, have a similar approach, except when renaming we have to use column indices since the area and density columns tend to import with slight variations in their titles, making them difficult to call by name when the code is rerun. Once renaming is done, we create the change in density column called `density_prop_change` and select just the area and density change columns for analysis.
+```{r message=FALSE, warning=FALSE}
+pop_by_continent <- subset(world_population, select = c(5:13)) %>%
+  rename("2022" = X2022.Population, "2020" = X2020.Population,
+         "2015" = X2015.Population, "2010" = X2010.Population,
+         "2000" = X2000.Population, "1990" = X1990.Population,
+         "1980" = X1980.Population, "1970" = X1970.Population) %>% 
+  pivot_longer(cols = c(2:9),
+               names_to = "year",
+               values_to = "population") %>% 
+  group_by(Continent, year) %>% 
+  summarise(
+    "total_population" = sum(population)
+  )
+pop_by_continent$year <- as.numeric(pop_by_continent$year)
+glimpse(pop_by_continent)
+
+density_by_area <- subset(world_population, select = c(13:15)) %>% 
+  rename(pop_1970 = c(1), area_km = c(2), density_2022 = c(3)) %>% 
+  mutate(density_prop_change = (density_2022 - (pop_1970/area_km))/(pop_1970/area_km)) %>% 
+  select(2, 4) %>%  
+  arrange(area_km)
+glimpse(density_by_area)
+```
+
+## Analyze Second Data Set
+For the first analysis, we create a line graph comparing year to total population for each continent. As can be clearly seen, Asia and Africa continue to be the continents with the most population growth over the last few decades while Europe and Oceania have basically stagnated. For the second analysis, we create a scatter plot comparing area to change in density and see that there is little to no correlation between a country's area and its population density change through the decades. In order further investigate the lack of correlation, we run a test on the regression line and note an $R^2$ value of 0.002, F-statistic of 0.443, and p-value of 0.5, showing absolutely no relationship or dependency between these two variables.
+```{r message=FALSE, warning=FALSE}
+ggplot(data = pop_by_continent, aes(x = year,
+                                    y = total_population,
+                                    color = Continent)) +
+  geom_line(linewidth = 2)
+
+ggplot(data = density_by_area, aes(x = area_km,
+                                   y = density_prop_change)) +
+  geom_point() +
+  stat_smooth(method = lm, se = FALSE)
+
+summary(lm(density_prop_change ~ area_km, data = density_by_area))
+```
+
+## Load Third Data Set
+Finally, let us load the third data set.
+```{r message=FALSE, warning=FALSE}
+url3 = "https://data.cityofnewyork.us/api/odata/v4/ykvb-493p"
+hiv_aids <- read.socrata(url3)
+glimpse(hiv_aids)
+```
+
+## Tidy Third Data Set
+The suggested analyses for this data set revolve around diagnosis rates by gender and race, changes in diagnoses over the years across neighborhoods, and a comparison between new HIV and HIV/AIDS diagnoses. Out of the three suggested analyses, the first and third one seem more plausible since the `borough` and `neighborhood` fields have a lot of empty observations, hindering the second suggested analysis. Thus, we tailor our tidying towards the first and third suggested analyses for this data set.
+
+We create the subset using the `year` field along with `sex`, `race`, and the different diagnosis counts. Right away we rename the diagnosis count columns to prepare them for pivoting. We pivot these columns in order to create one for `diagnosis` and another for `count`. Some observations for `count` have an invalid "*" value and have to be filtered out. Once these invalid values are removed we can make the `count` field numeric and optimal for analysis. After all is said and done, we group the subset by `year`, `sex`, `race`, `diagnosis` and sum the counts in order to avoid unnecessary repetition in the `diagnosis` column.
+```{r message=FALSE, warning=FALSE}
+hiv_aids_sex_race <- subset(hiv_aids, select = c(1, 4:6, 8, 10)) %>%
+  rename(hiv = hiv_diagnoses_num, "hiv and aids" = hiv_aids_concurrent_num,
+         aids = aids_diagnoses_num) %>% 
+  pivot_longer(cols = c(4:6),
+               names_to = "diagnosis",
+               values_to = "count") %>% 
+  filter(count != "*")
+hiv_aids_sex_race$count <- as.numeric(hiv_aids_sex_race$count)
+
+hiv_aids_sex_race <- hiv_aids_sex_race %>% 
+  group_by(year, sex, race, diagnosis) %>% 
+  summarise(
+    count = sum(count)
+  ) %>% 
+  arrange(year, sex, race, diagnosis)
+```
+
+## Analyze Third Data Set
+Next, we create a line graph for each each relationship that was mentioned in the first and third suggestions. The first is a plot displaying total count of diagnoses through the years by `sex`, the second shows it by `race`, and the third shows HIV vs. HIV/AIDS diagnoses. As can be seen in every plot, there seemed to be an uptick in diagnoses in the years 2016 and 2020. The first plot shows males to be those primarily affected by the disease, the second plot shows that black New Yorkers hold a higher proportion of diagnoses, and that concurrent HIV/AID diagnoses still hold a noticeable portion of first time diagnoses. One thing to note about the data as a whole is that the years 2014 and 2015 are not accounted for, thus explaining why in every plot there is a perfectly straight line connecting 2013 to 2016 or at times no line at all.
+```{r message=FALSE, warning=FALSE}
+ggplot(data = hiv_aids_sex_race %>% 
+         group_by(year, sex) %>% 
+         summarise(
+           count = sum(count)
+           ), aes(x = year, y = count, color = sex)) +
+  geom_line(linewidth = 2)
+
+ggplot(data = hiv_aids_sex_race %>% 
+         group_by(year, race) %>% 
+         summarise(
+           count = sum(count)
+           ), aes(x = year, y = count, color = race)) +
+  geom_line(linewidth = 2)
+
+ggplot(data = hiv_aids_sex_race %>% 
+         filter(diagnosis != "aids") %>% 
+         group_by(year, diagnosis) %>% 
+         summarise(
+           count = sum(count)
+           ), aes(x = year, y = count, color = diagnosis)) +
+  geom_line(linewidth = 2)
+```
+
+## Conclusions / Findings and Recommendations
+The different data sets and suggested data analyses required different approaches towards tidying and preparation. The first data set relied mostly on pivoting the different modes of transportation and helped us see just how badly the pandemic has affected the MTA. The second data set needed more of a keen eye on short comings from the table itself and showed us just how population has grown and how area has no effect on population density change at all. The third data set had issues with data quality but we still had enough to analyze what we needed to, helping us take note of HIV/AIDS trends in NYC. All in all, the data sets were successfully tidied and the suggested analyses were successfully performed.
