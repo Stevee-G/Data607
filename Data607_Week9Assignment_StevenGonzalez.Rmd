@@ -1,0 +1,76 @@
+---
+title: "Data 607 Assignment 9"
+author: "Steven Gonzalez"
+date: "10/27/2024"
+output: html_document
+---
+
+## Overview / Introduction
+For this assignment, we've been tasked with choosing an API from the [New York Times Developer site](https://developer.nytimes.com/apis), constructing an interface in R to read in the JSON data, and transforming it into an R data frame which can be used for some analysis. Of the APIs available on the NYT site, I chose the [Most Popular Articles API](https://developer.nytimes.com/docs/most-popular-product/1/overview) and decided to look into articles with the most views within the last 30 days.
+
+### Load Packages
+As always, let's start off by loading the necessary packages.
+```{r message = FALSE, warning = FALSE}
+library(tidyverse)
+library(dplyr)
+library(jsonlite)
+library(httr)
+```
+
+### Import API Data
+In order to import the API data, we first had to assign each part of the URL we are going to use to a variable, especially the `key` and the parts that tell the API what we are looking for such as the `parameter` and `period`. Once having done this we go ahead and run the `GET()` function from the `httr` package and store the results in our `api_data` blob.
+```{r message = FALSE, warning = FALSE}
+domain <- "https://api.nytimes.com"
+path <- "/svc/mostpopular/v2/"
+parameter <- "viewed" #possible values: emailed, shared, viewed
+period <- 30 #possible values: 1, 7, 30
+fragment <- ".json?api-key="
+key <- "1noMabNVIXRvem1M2c2MGeFL4uwUO07J"
+
+api_data <- GET(paste0(domain, path, parameter, "/", period, fragment, key, sep = ""))
+api_data
+```
+
+### Transform into R Data Frame
+Now that we have the data from the API, we transform it into something more manageable using the code below.
+```{r message = FALSE, warning = FALSE}
+raw_data = fromJSON(rawToChar(api_data$content))
+
+data_frame = as.data.frame(raw_data$results)
+
+glimpse(data_frame)
+```
+
+### Data Tidying
+Let's go ahead and tidy up the data to perform a simple analysis on article `type` and `section`. We will also keep some peripheral fields such as `title`, `byline` (author), `published_date`, etc. To do this we take a subset of the data and select the fields in the order we desire. The resulting data set can be seen below.
+```{r message = FALSE, warning = FALSE}
+top_viewed_articles <- subset(data_frame, select = c(15:16, 14, 13, 6, 8:9))
+glimpse(top_viewed_articles)
+```
+
+### Data Analysis
+We start the analysis by grouping the data according to `type` and providing a count for each. Doing this shows a clear dominance of a plain "article" format over the "interactive" type. Creating a bar chart of this illustrates it further. Next, we analyze `section` using the same approach. When first run, the most popular sections were U.S., New York, and Arts. However, while writing this section and rerunning the code, that all changed and we ended up with U.S. and New York taking dominance. Therefore, it is possible that, after publishing this RMD file, the results may change again.
+```{r message = FALSE, warning = FALSE}
+top_article_type <- top_viewed_articles %>% 
+  group_by(type) %>% 
+  summarise(
+    count = n()
+  )
+top_article_type
+
+ggplot(data = top_viewed_articles, aes(x = type, fill = type)) +
+  geom_bar()
+
+top_section <- top_viewed_articles %>% 
+  group_by(section) %>% 
+  summarise(
+    count = n()
+  )
+top_section
+
+ggplot(data = top_viewed_articles, aes(x = section, fill = section)) +
+  geom_bar()
+```
+
+## Conclusions / Findings and Recommendations
+As of writing, I was able to see the API data change right before my eyes, resulting in a slight change in the analysis results. This, of course, only attested further towards the benefits of pulling data from an API and not a source that is otherwise stagnant. Using the `httr` and `jsonlite` packages to import and analyze data like that provided on the [New York Times Developer site](https://developer.nytimes.com/apis) has proven to be very beneficial. In addition, having to use minimal code to get the data frame up and running was helpful in expediting the process to start tidying and analyzing the data. Having said this, the ability to import, tidy, and analyze API data is one all data professionals should become comfortable with.
