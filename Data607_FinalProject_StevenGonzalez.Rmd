@@ -1,0 +1,157 @@
+---
+title: "Data 607 Final Project"
+author: "Steven Gonzalez"
+date: "2/16/2025"
+output: html_document
+---
+
+## Overview / Introduction
+For this final project, we have been tasked with using what we have learned throughout the semester with regards to data importing, preparation, tidying, and transformation and conducting a statistical analysis on data of our choosing. In response, we will be formatting and analyzing data surrounding the change in the national consumer price index (CPI) and wage growth in order to test for a significant difference between the two measures. Anecdotal evidence would lead one to believe that increases in CPI, a key indicator of inflation, has been outpacing wage growth for an ample amount of time, leading to the reduction in spending power experienced by the average person. Seeing the impact this would have on the average consumer if true, it is worth looking further into, especially with how important the subject has become in recent years.
+
+As per project requirements, we will be using more than one data source and importing them using different methods. The data for monthly CPI percentage change throughout the years will come from the U.S. Bureau of Labor Statistics [website](https://www.bls.gov/cpi/data.htm) and the data for monthly average wage growth will come from a [wage growth tracker](https://www.atlantafed.org/chcs/wage-growth-tracker) offered by the Federal Reserve Bank of Atlanta. We will retrieve the CPI data using an [application programming interface (API)](https://www.bls.gov/developers/home.htm) and retrieve the wage data as a [CSV file](https://github.com/Stevee-G/Data607/blob/main/Wage_Growth.csv).
+
+### Load Packages
+As always, let's begin by loading all necessary packages.
+```{r message = FALSE, warning = FALSE}
+library(tidyverse)
+library(httr)
+library(jsonlite)
+library(glue)
+library(tsibble)
+library(psych)
+library(infer)
+```
+
+### Import Data
+Following U.S. Bureau of Labor Statistics [documentation](https://www.bls.gov/developers/api_signature_v2.htm#single), we will start off by importing the CPI data as a JSON file. In order to do this, we first prepare the payload that will be used as the body for the `httr::POST` function making sure to include the API key, series ID, start year, end year, and whether we want further calculations provided in the series. The API is limited to a 20 year range per query and so we choose the years 2004 and 2023 as our start year and end year, respectively. If one were to desire a longer time period, a quick workaround would be to create multiple requests containing different start and end years and then appending the results into a longer table in R. Once the payload has been created and requirements have been met, we send a request using the `POST` function and save the resulting list in our `response` variable. We then retrieve the content using our `fromJSON` function and transform it using `as_tibble`. The results can be seen below. Finally, and with much more ease, we import the wage growth data using the `read.csv` function. This can also be seen below.
+```{r message = FALSE, warning = FALSE}
+cpi_url <- "https://api.bls.gov/publicAPI/v2/timeseries/data/"
+bls_key <- "8ab783e5af0347cb8e8d3ec8c3cc7378"
+series_id <- "CUUR0000SA0"
+start_year <- "2004"
+end_year <- "2023"
+
+payload <- glue('{
+  "seriesid":["{{series_id}}"],
+  "startyear":"{{start_year}}",
+  "endyear":"{{end_year}}",
+  "calculations":true,
+  "registrationkey":"{{bls_key}}"
+}', .open = "{{", .close = "}}")
+
+response <- POST(cpi_url,
+                 body = payload,
+                 content_type("application/json"),
+                 encode = "json")
+
+cpi_list <- content(response, "text") %>% 
+  fromJSON()
+cpi_data <- cpi_list$Results$series$data[[1]] %>% 
+  as_tibble()
+glimpse(cpi_data)
+
+wg_url <- "https://raw.githubusercontent.com/Stevee-G/Data607/refs/heads/main/Wage_Growth.csv"
+wg_data <- read.csv(wg_url)
+glimpse(wg_data)
+```
+
+### Data Tidying and Transformation
+Now that we've retrieved the data, let us begin formatting it into something more useful. As can be seen in the results above, the `cpi_data` tibble still contains nested data which we need. Since we are comparing yearly CPI percentage change (inflation rate) to yearly wage growth, we have no need for the `value` column but rather the column containing 12 month change held within the `calculations` data frame. In order to access this, we use the `unnest_longer` and `unnest_wider` functions in a step down fashion until we reach the level we are looking for, in this case `pct_changes`. Doing this produces a tibble where the monthly, trimonthly, half-year, and yearly percentage changes are available to reference and manipulate. Now that that's taken care of, we combine and transform the `year` and `periodName` (month) columns into a date field for each month. Afterwards, we rename and select the columns we need for the remainder of our analysis, making sure to rearrange the `cpi_trim` tibble in ascending order according to the date. Finally, we convert the `inflation_rate` field into a numeric one in order to perform arithmetic with it.
+
+Next, we prepare the wage growth data by first converting the already provided `Monthyear` into a date field. We then rename and select the fields we need for the remainder of the analysis. Unlike `cpi_data`, `wg_data` was not restricted in the number of years that could be retrieved. For this reason we need to filter just for the dates from 1/1/2004 to 12/1/2023. Afterwards, just as we did for `cpi_trim`, we convert the `wage_growth` field into a numeric one in order to perform arithmetic with it.
+
+Now that we have both tibbles in matching format, we go ahead and join them on `date` using the `inner_join` function. We the further tidy the data by pivoting the tibble longer. We do this in order to create a field denoting the `measure` (i.e. inflation rate or wage growth) and an adjacent field containing the respective `values` for each month. Doing so produces the `data` tibble seen below.
+```{r message = FALSE, warning = FALSE}
+cpi_unnested <- cpi_data %>%
+  unnest_longer(calculations) %>%
+  unnest_wider(calculations) %>%
+  unnest_longer(pct_changes) %>%
+  unnest_wider(pct_changes)
+
+cpi_trim <- cpi_unnested %>%
+  mutate(date = as.Date(yearmonth(paste(
+    year, periodName, sep = " ")), format = "%Y %b")) %>%
+  rename(inflation_rate = "12") %>%
+  select(date, inflation_rate) %>%
+  arrange(date)
+
+cpi_trim$inflation_rate <- as.numeric(cpi_trim$inflation_rate)
+glimpse(cpi_trim)
+
+wg_dated <- wg_data %>% 
+  mutate(date = as.Date(Monthyear, format = "%m/%d/%Y")) %>%
+  rename(wage_growth = Overall) %>% 
+  select(date, wage_growth)
+
+wg_trim <- wg_dated %>% 
+  filter(date >= "2004-01-01" & date <= "2023-12-01")
+
+wg_trim$wage_growth <- as.numeric(wg_trim$wage_growth)
+glimpse(wg_trim)
+
+combined_data <- inner_join(cpi_trim, wg_trim, by = join_by(date))
+
+data <- combined_data %>%
+  rename("Inflation Rate" = inflation_rate) %>%
+  rename("Wage Growth" = wage_growth) %>%
+  pivot_longer(
+    cols = c("Inflation Rate", "Wage Growth"),
+    names_to = "measure",
+    values_to = "value"
+  )
+glimpse(data)
+```
+
+### Data Summarization and Visualization
+Seeing as how our analysis consists of a comparison of numeric values between two categories, we will go ahead and use appropriate data summaries and visuals to familiarize ourselves with the data and any potential patterns or indicators. We can see basic data wide attributes such as the `min`, `median`, `mean`, `max` and so on using the `summary` function. The `describe` function provides us with further details such as the `sd` (standard deviation) and `se` (standard error) for the entire data set while the `describeBy` function gives us more or less the same info just split by `measure`. Using the `decribeBy` function helps us see an already pretty telling detail in the `mean` and `median` for each measure. These details are further amplified when we visualize the data using a scatter and box plot. We can already see from the summaries and visuals that wage growth appeared to have the upper hand on inflation between January of 2004 and December of 2023.
+```{r message = FALSE, warning = FALSE}
+summary(data$value)
+
+describe(data$value)
+
+description <- describeBy(data$value, group = data$measure, mat = TRUE, skew = FALSE)
+names(description)[2] <- "measure"
+description$Var <- description$sd^2
+description$contrast <- (description$mean - mean(description$mean))
+description
+
+ggplot(data = data, aes(x = date, y = value, color = measure, shape = measure)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Inflation Rate and Wage Growth vs Time",
+       x = "Date", y = "% Change", color = NULL, shape = NULL) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplot(data = data, aes(x = measure, y = value, fill = measure)) +
+  geom_boxplot() +
+  labs(title = "Average Change by Inflation Rate and Wage Growth",
+       x = "Measure", y = "% Change", fill = NULL) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### Data Analysis
+As previously stated, our analysis consists of a comparison of numeric values between two categories. A comparison of two categorical averages calls for a T-test. The null hypothesis for this specific test would be that there is no significant difference between the means for inflation and wage growth. The alternative hypothesis, then, would be that there is a significant difference between the means for inflation and wage growth. Now that we've identified the statistical test and hypotheses, we can go ahead and perform the analysis. For this analysis, we will also use a confidence level of 0.95 and alpha of 0.05. Let's start off by finding the standardized observed statistic, or t-score in this case. We do this by making use of the `infer` package, which we will do for the reminder of the analysis as well. Doing so gives us a t-score of -5.83, already showing great significance. Next, we generate a null distribution and place the already calculated t-score on the plot. Here, we can see just how far the t-score is from the distribution we would expect if the null hypothesis were to be true. Finally, for confirmation purposes, we calculate the p-value and end up with a result of basically 0, which is significantly lower than our alpha of 0.05. With these results, we can say with confidence, that we can reject the null hypothesis and adopt the alternative hypothesis that there is a significant difference between average inflation and average wage growth from January of 2004 and December of 2023.
+```{r message = FALSE, warning = FALSE}
+t_hat <- data %>% 
+  specify(value ~ measure) %>% 
+  hypothesize(null = "independence") %>%
+  calculate(stat = "t", order = c("Inflation Rate", "Wage Growth"))
+t_hat
+
+null_dist <- data %>%
+  specify(value ~ measure) %>%
+  hypothesize(null = "independence") %>%
+  generate(reps = 1000, type = "permute") %>%
+  calculate(stat = "t", order = c("Inflation Rate", "Wage Growth"))
+
+visualize(null_dist, method = "both") +
+  shade_p_value(obs_stat = t_hat, direction = "two-sided") +
+  labs(x = "t Stat", y = "Density") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+null_dist %>%
+  get_p_value(obs_stat = t_hat, direction = "two-sided")
+```
+
+## Conclusions / Findings and Recommendations
+Although anecdotal evidence and lived experiences seem to suggest that inflation rates have far outpaced wage growth within the last few years, the statistical analysis we just conducted illustrated otherwise. Given this, one must then ask themselves, where lies the disconnect? Apart from pure numbers, many factors play a role in how inflation is experienced at an individual level. Could it be that years of steady wage growth and low inflation cause people to spend in such a way that when inflation does rise there is an immediate disruption in quality of life? Could it be that the average wage growth does not represent what the majority of people experience as a whole? Could it be that in the years before the range analyzed in this report inflation actually did outpace wage growth and thus we are still catching up? These variables, and many more, should be further looked into to see what exactly has been causing the squeeze that the majority of Americans have been feeling over the past few years. Aside from this, the analysis has turned out to be a success. It is important to note that these insights could not have been achieved if it weren't for the importing, preparation, tidying, and transformation tools at our disposal. Good data manipulation has once again proven pivotal in our ability to summarize, visualize, and analyze data.
